@@ -11,6 +11,7 @@ threshold = 0
 keep_active = False
 list_refresh_minutes = 180
 chat_refresh_seconds = 30
+whitelist_path = ''
 
 # Auto-configured parameters
 twitch_user = ''
@@ -25,7 +26,7 @@ acc = "application/json"
 
 # Working Lists
 activeBotList = {}
-currentBanList = []
+ignoreList = set()
 ban_queue = []
 
 botListScheduler = sched.scheduler(time.time, time.sleep)
@@ -68,7 +69,7 @@ def fulfill_ban():
     if len(ban_queue) > 0:
         # only do bans at certain intervals to avoid overdoing API rates
         ban_user(ban_queue[0], default_ban_reason)
-        currentBanList.append(ban_queue[0])
+        ignoreList.add(ban_queue[0])
         print(f"Banned {ban_queue[0]}.")
         ban_queue.pop(0)
     else:
@@ -79,7 +80,7 @@ def fulfill_ban():
 
 def ban_check():
     global activeBotList
-    global currentBanList
+    global ignoreList
     global threshold
 
     chatters = get_chatters()
@@ -89,7 +90,7 @@ def ban_check():
     if threshold > 0:
         to_ban = [viewer for viewer in to_ban if activeBotList[viewer] >= threshold]
     # filter those already banned
-    to_ban = [viewer for viewer in to_ban if viewer not in currentBanList]
+    to_ban = [viewer for viewer in to_ban if viewer not in ignoreList]
 
     if len(to_ban) > 0:
         print(f'Found {len(to_ban)} bots in the {twitch_user} stream. Clearing...')
@@ -168,6 +169,13 @@ def get_ban_list():
     data = r.json()
     return data
 
+
+def get_whitelist_file_items(path:str):
+    # Read whitelist as one bot name on each line
+    if os.path.exists(path):
+        with open(path, 'r') as file:
+            return [name.strip() for name in file.readlines() if len(name.strip()) > 0]
+    return []
 
 """Section: STREAMELEMENTS ACTIONS"""
 
@@ -250,11 +258,14 @@ def script_update(settings):
     global chat_refresh_seconds
     global list_refresh_minutes
     global keep_active
+    global whitelist_path
+    global ignoreList
     threshold = obs.obs_data_get_int(settings, 'threshold')
 
     new_chat_refresh_seconds = obs.obs_data_get_int(settings, 'chatters_seconds')
     new_list_refresh_minutes = obs.obs_data_get_int(settings, 'list_minutes')
     new_keep_active = obs.obs_data_get_bool(settings, 'keep_active')
+    new_whitelist_path = obs.obs_data_get_string(settings, "nonmod_whitelist")
 
     needs_reboot = new_keep_active and (
         new_chat_refresh_seconds != chat_refresh_seconds or
@@ -280,11 +291,28 @@ def script_update(settings):
         keep_active = True
         decide_to_activate()
 
+    if not os.path.exists(new_whitelist_path):
+        obs.obs_data_set_string(settings, "nonmod_whitelist", '')
+    if whitelist_path != new_whitelist_path:
+        # remove old whitelist stuff from ignore list and add new stuff
+        if len(whitelist_path) > 0:
+            old_bots = get_whitelist_file_items(whitelist_path)
+            ignoreList = ignoreList - set(old_bots)
+        if len(new_whitelist_path) > 0:
+            new_bots = get_whitelist_file_items(new_whitelist_path)
+            ignoreList = ignoreList.union(new_bots)
+
+        whitelist_path = new_whitelist_path
+
 
 def script_properties():
     props = obs.obs_properties_create()
     obs.obs_properties_add_path(props, "se_token",
                                 "SE token file",
+                                obs.OBS_PATH_FILE, '*', None)
+
+    obs.obs_properties_add_path(props, "nonmod_whitelist",
+                                "Non-Mod Bot Whitelist",
                                 obs.OBS_PATH_FILE, '*', None)
 
     obs.obs_properties_add_int(props, "threshold",
