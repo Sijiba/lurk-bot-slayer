@@ -1,6 +1,8 @@
 # lurk-bot-slayer
  OBS Script that uses your StreamElements bot to ban outside bots from your Twitch stream.
  
+ It checks twitchinsights.net's list of active bots, and bans any of them that show up in your chat.
+ 
  Requires your StreamElements JWT Token to use your chat and ban bots. This token can be found at https://streamelements.com/dashboard/account/channels under "Show secrets".
  
  Even without this token, it can still identify and name lurker bots in the script logs, but bans will not actually work.
